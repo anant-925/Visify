@@ -264,6 +264,25 @@ class PythonSimulator {
       return Math.trunc(Number(this._evalExpr(intMatch[1].trim(), vars, stack, lineIdx)));
     }
 
+    // ── method call on array: arr.copy(), arr.index() ──
+    const methodExprMatch = s.match(/^([a-zA-Z_]\w*)\.(\w+)\(([^]*)\)$/);
+    if (methodExprMatch) {
+      const objVal = vars[methodExprMatch[1]];
+      const method = methodExprMatch[2];
+      const argStr = methodExprMatch[3].trim();
+      const argVals = argStr === '' ? [] : splitArgs(argStr).map(a => this._evalExpr(a, vars, stack, lineIdx));
+      if (Array.isArray(objVal)) {
+        if (method === 'copy') return [...objVal];
+        if (method === 'index') return objVal.indexOf(argVals[0]);
+        if (method === 'count') return objVal.filter(x => x === argVals[0]).length;
+      }
+      if (typeof objVal === 'string') {
+        if (method === 'upper') return objVal.toUpperCase();
+        if (method === 'lower') return objVal.toLowerCase();
+        if (method === 'split') return argVals.length ? objVal.split(argVals[0]) : objVal.split(' ');
+      }
+    }
+
     // ── user-defined function call: name(args) ──
     const callMatch = s.match(/^([a-zA-Z_]\w*)\(([^]*)\)$/);
     if (callMatch) {
@@ -479,6 +498,41 @@ class PythonSimulator {
         continue;
       }
 
+      // --- tuple assignment: a, b = c, d  or  arr[i], arr[j] = arr[j], arr[i] ---
+      // Match exactly two LHS targets separated by a comma, then "=" then two RHS exprs
+      const tupleAssignMatch = line.match(/^([^=,]+),\s*([^=,]+)\s*=\s*([^=].*)$/);
+      if (tupleAssignMatch && !line.includes('==')) {
+        const lhs1Raw = tupleAssignMatch[1].trim();
+        const lhs2Raw = tupleAssignMatch[2].trim();
+        // Split RHS on the outermost comma
+        const rhsStr = tupleAssignMatch[3].trim();
+        const commaIdx = this._findBinaryOp(rhsStr, ',');
+        if (commaIdx !== -1) {
+          const rhs1 = this._evalExpr(rhsStr.slice(0, commaIdx).trim(), vars, stack, i);
+          const rhs2 = this._evalExpr(rhsStr.slice(commaIdx + 1).trim(), vars, stack, i);
+
+          const _assign = (lhs, val) => {
+            const idxM = lhs.match(/^([a-zA-Z_]\w*)\[(.+)\]$/);
+            if (idxM) {
+              const arrName = idxM[1];
+              const idx = this._evalExpr(idxM[2], vars, stack, i);
+              if (Array.isArray(vars[arrName]) && typeof idx === 'number') {
+                vars[arrName] = [...vars[arrName]];
+                vars[arrName][idx] = val;
+              }
+            } else if (/^[a-zA-Z_]\w*$/.test(lhs)) {
+              vars[lhs] = val;
+            }
+          };
+
+          _assign(lhs1Raw, rhs1);
+          _assign(lhs2Raw, rhs2);
+          this.snapshot(i, vars, stack, `${lhs1Raw}, ${lhs2Raw} = ${JSON.stringify(rhs1)}, ${JSON.stringify(rhs2)}`);
+          i++;
+          continue;
+        }
+      }
+
       // --- indexed assignment arr[i] = val ---
       const idxAssignMatch = line.match(/^([a-zA-Z_]\w*)\[(.+)\]\s*=\s*(.+)$/);
       if (idxAssignMatch) {
@@ -501,6 +555,37 @@ class PythonSimulator {
         const rhs = this._evalExpr(assignMatch[2], vars, stack, i);
         vars[varName] = rhs;
         this.snapshot(i, vars, stack, `${varName} = ${JSON.stringify(rhs)}`);
+        i++;
+        continue;
+      }
+
+      // --- method call: arr.append(val) / arr.pop() / arr.sort() ---
+      const methodMatch = line.match(/^([a-zA-Z_]\w*)\.(\w+)\s*\(([^]*)\)$/);
+      if (methodMatch) {
+        const objName = methodMatch[1];
+        const method = methodMatch[2];
+        const argStr = methodMatch[3].trim();
+        const argVals = argStr === '' ? [] : splitArgs(argStr).map(a => this._evalExpr(a, vars, stack, i));
+        if (Array.isArray(vars[objName])) {
+          vars[objName] = [...vars[objName]];
+          if (method === 'append') {
+            vars[objName].push(argVals[0]);
+            this.snapshot(i, vars, stack, `${objName}.append(${JSON.stringify(argVals[0])}) → length=${vars[objName].length}`);
+          } else if (method === 'pop') {
+            const popped = argVals.length ? vars[objName].splice(argVals[0], 1)[0] : vars[objName].pop();
+            this.snapshot(i, vars, stack, `${objName}.pop() → ${JSON.stringify(popped)}`);
+          } else if (method === 'sort') {
+            vars[objName].sort((a, b) => a - b);
+            this.snapshot(i, vars, stack, `${objName}.sort() → ${JSON.stringify(vars[objName])}`);
+          } else if (method === 'reverse') {
+            vars[objName].reverse();
+            this.snapshot(i, vars, stack, `${objName}.reverse()`);
+          } else {
+            this.snapshot(i, vars, stack, `${line}`);
+          }
+        } else {
+          this.snapshot(i, vars, stack, `${line}`);
+        }
         i++;
         continue;
       }

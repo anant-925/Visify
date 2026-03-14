@@ -161,6 +161,63 @@ int main() {
     printf("Digits: %d\\n", result);
     return 0;
 }`
+  },
+  {
+    id: 'insertion-sort',
+    name: 'Insertion Sort',
+    category: 'sorting',
+    language: 'python',
+    timeComplexity: 'O(n²)',
+    spaceComplexity: 'O(1)',
+    description: 'Builds the sorted array one element at a time by inserting each element into its correct position.',
+    code: `def insertion_sort(arr):
+    for i in range(1, len(arr)):
+        key = arr[i]
+        j = i - 1
+        while j >= 0 and arr[j] > key:
+            arr[j + 1] = arr[j]
+            j -= 1
+        arr[j + 1] = key
+    return arr
+
+arr = [12, 11, 13, 5, 6]
+result = insertion_sort(arr)
+print(result)`
+  },
+  {
+    id: 'merge-sort',
+    name: 'Merge Sort',
+    category: 'sorting',
+    language: 'python',
+    timeComplexity: 'O(n log n)',
+    spaceComplexity: 'O(n)',
+    description: 'Divide-and-conquer sort that splits, recursively sorts, then merges two halves.',
+    code: `def merge_sort(arr):
+    if len(arr) <= 1:
+        return arr
+    mid = len(arr) // 2
+    left = merge_sort(arr[:mid])
+    right = merge_sort(arr[mid:])
+    return merge(left, right)
+
+def merge(left, right):
+    result = []
+    i = 0
+    j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            result += [left[i]]
+            i += 1
+        else:
+            result += [right[j]]
+            j += 1
+    result += left[i:]
+    result += right[j:]
+    return result
+
+arr = [38, 27, 43, 3]
+sorted_arr = merge_sort(arr)
+print(sorted_arr)`
   }
 ];
 
